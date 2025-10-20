@@ -11,10 +11,7 @@ import java.util.function.Function;
  * exceptions to align with the requirements of the BreedFetcher interface.
  */
 public class DogApiBreedFetcher implements BreedFetcher {
-    // 可替换的“HTTP GET → String”函数：默认真实 HTTP；测试时可注入假响应
     private final Function<String, String> httpGet;
-
-    /** 默认构造：真实 HTTP（API 恢复后直接用它） */
     public DogApiBreedFetcher() {
         this.httpGet = url -> {
             try {
@@ -34,13 +31,11 @@ public class DogApiBreedFetcher implements BreedFetcher {
                     return sb.toString();
                 }
             } catch (Exception e) {
-                // 包装成 Runtime 再由上层统一转成受检异常
                 throw new RuntimeException(e);
             }
         };
     }
 
-    /** 测试构造：注入一个返回样例 JSON 的函数（无需访问网络） */
     public DogApiBreedFetcher(Function<String, String> httpGet) {
         this.httpGet = Objects.requireNonNull(httpGet);
     }
@@ -53,10 +48,6 @@ public class DogApiBreedFetcher implements BreedFetcher {
      */
     @Override
     public List<String> getSubBreeds(String breed) throws BreedNotFoundException {
-        // TODO Task 1: Complete this method based on its provided documentation
-        //      and the documentation for the dog.ceo API. You may find it helpful
-        //      to refer to the examples of using OkHttpClient from the last lab,
-        //      as well as the code for parsing JSON responses.
         if (breed == null || breed.trim().isEmpty()) {
             throw new BreedNotFoundException("Breed is blank");
         }
@@ -69,14 +60,12 @@ public class DogApiBreedFetcher implements BreedFetcher {
             throw new BreedNotFoundException("Failed to fetch sub-breeds for: " + breed, re.getCause());
         }
 
-        // 解析 status
         java.util.regex.Matcher mStatus = java.util.regex.Pattern
                 .compile("\"status\"\\s*:\\s*\"([^\"]*)\"")
                 .matcher(body);
         String status = mStatus.find() ? mStatus.group(1) : "";
 
         if (!"success".equalsIgnoreCase(status)) {
-            // 包括 "error"：从 message 取文案，抛受检异常
             java.util.regex.Matcher mMsg = java.util.regex.Pattern
                     .compile("\"message\"\\s*:\\s*\"([^\"]*)\"")
                     .matcher(body);
@@ -85,7 +74,6 @@ public class DogApiBreedFetcher implements BreedFetcher {
             throw new BreedNotFoundException(msg);
         }
 
-        // 成功：解析 message 为字符串数组
         java.util.regex.Matcher mArray = java.util.regex.Pattern
                 .compile("\"message\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL)
                 .matcher(body);
