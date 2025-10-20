@@ -71,7 +71,6 @@ public class DogApiBreedFetcher implements BreedFetcher {
                 throw new BreedNotFoundException(msg);
             }
 
-            // 成功：message 是字符串数组 → 解析 ["a","b",...]
             java.util.regex.Matcher mArray = java.util.regex.Pattern
                     .compile("\"message\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL)
                     .matcher(body);
