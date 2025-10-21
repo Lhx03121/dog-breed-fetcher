@@ -1,9 +1,13 @@
 package dogapi;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.function.Function;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.util.*;
 
 /**
  * BreedFetcher implementation that relies on the dog.ceo API.
@@ -11,34 +15,7 @@ import java.util.function.Function;
  * exceptions to align with the requirements of the BreedFetcher interface.
  */
 public class DogApiBreedFetcher implements BreedFetcher {
-    private final Function<String, String> httpGet;
-    public DogApiBreedFetcher() {
-        this.httpGet = url -> {
-            try {
-                java.net.URL u = new java.net.URL(url);
-                java.net.URLConnection raw = u.openConnection();
-                raw.setConnectTimeout(10_000);
-                raw.setReadTimeout(15_000);
-                raw.setRequestProperty("User-Agent", "DogBreedFetcher/1.0");
-                try (java.io.InputStream is = raw.getInputStream();
-                     java.io.InputStreamReader isr =
-                             new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8);
-                     java.io.BufferedReader br = new java.io.BufferedReader(isr)) {
-                    StringBuilder sb = new StringBuilder();
-                    char[] buf = new char[4096];
-                    int n;
-                    while ((n = br.read(buf)) != -1) sb.append(buf, 0, n);
-                    return sb.toString();
-                }
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        };
-    }
-
-    public DogApiBreedFetcher(Function<String, String> httpGet) {
-        this.httpGet = Objects.requireNonNull(httpGet);
-    }
+    private final OkHttpClient client = new OkHttpClient();
 
     /**
      * Fetch the list of sub breeds for the given breed from the dog.ceo API.
@@ -48,44 +25,36 @@ public class DogApiBreedFetcher implements BreedFetcher {
      */
     @Override
     public List<String> getSubBreeds(String breed) throws BreedNotFoundException {
-        if (breed == null || breed.trim().isEmpty()) {
-            throw new BreedNotFoundException("Breed is blank");
-        }
-        String url = "https://dog.ceo/api/breed/" + breed.trim().toLowerCase() + "/list";
-
-        final String body;
-        try {
-            body = httpGet.apply(url);
-        } catch (RuntimeException re) {
-            throw new BreedNotFoundException("Failed to fetch sub-breeds for: " + breed, re.getCause());
+        if (breed == null || breed.isBlank()) {
+            throw new BreedNotFoundException(breed);
         }
 
-        java.util.regex.Matcher mStatus = java.util.regex.Pattern
-                .compile("\"status\"\\s*:\\s*\"([^\"]*)\"")
-                .matcher(body);
-        String status = mStatus.find() ? mStatus.group(1) : "";
+        final String url = "https://dog.ceo/api/breed/" + breed.trim().toLowerCase() + "/list";
+        Request req = new Request.Builder()
+                .url(url)
+                .get()
+                .header("User-Agent", "DogBreedFetcher/1.0")
+                .build();
 
-        if (!"success".equalsIgnoreCase(status)) {
-            java.util.regex.Matcher mMsg = java.util.regex.Pattern
-                    .compile("\"message\"\\s*:\\s*\"([^\"]*)\"")
-                    .matcher(body);
-            String msg = mMsg.find() ? mMsg.group(1)
-                    : "Breed not found (main breed does not exist)";
-            throw new BreedNotFoundException(msg);
+        try (Response resp = client.newCall(req).execute()) {
+            if (!resp.isSuccessful() || resp.body() == null) {
+                throw new BreedNotFoundException(breed);
+            }
+            String body = resp.body().string();
+            JSONObject root = new JSONObject(body);
+            String status = root.optString("status", "");
+            if (!"success".equalsIgnoreCase(status)) {
+                throw new BreedNotFoundException(breed);
+            }
+            JSONArray arr = root.getJSONArray("message");
+            List<String> subs = new ArrayList<>(arr.length());
+            for (int i = 0; i < arr.length(); i++) {
+                subs.add(arr.getString(i));
+            }
+            Collections.sort(subs);
+            return subs;
+        } catch (IOException e) {
+            throw new BreedNotFoundException(breed);
         }
-
-        java.util.regex.Matcher mArray = java.util.regex.Pattern
-                .compile("\"message\"\\s*:\\s*\\[(.*?)\\]", java.util.regex.Pattern.DOTALL)
-                .matcher(body);
-        List<String> subs = new ArrayList<>();
-        if (mArray.find()) {
-            String inside = mArray.group(1); // 例如 "afghan","basset",...
-            java.util.regex.Matcher each = java.util.regex.Pattern
-                    .compile("\"([^\"]*)\"")
-                    .matcher(inside);
-            while (each.find()) subs.add(each.group(1));
-        }
-        java.util.Collections.sort(subs);
-        return subs;
     }
 }
